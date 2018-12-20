@@ -1,0 +1,423 @@
+{
+	"AWSTemplateFormatVersion" : "2010-09-09",
+
+	"Description" : "Single server Umbraco DEV",
+
+	"Parameters" : {
+		"KeyPairName": {
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+			"Default": "none-prod",
+            "Type": "String"
+        },
+		"EnvironmentName": {
+            "Description": "Environment Name - eg develop-UAT, pass in from Jenkins",
+						"Default": "",
+            "Type": "String"
+    },
+		"EnvironmentSuffix": {
+            "Description": "Environment Domain Suffix - defaults to scalabs.io",
+			"Default": "scalabs.io.",
+            "Type": "String"
+        },
+		"DeploymentRole": {
+		  "Description" : "Role that allow access to the required resource for purpose of deployment.",
+		  "Type": "String",
+		  "Default": "Misc-DeploymentRole-1ICRMS976V59C"
+		},
+		"WebServerAmi" : {
+			"Description" : "Image id of the webserver - AMI Name: W2012R2-IIS-461-2017-01-09",
+			"Default" : "ami-59d4d13a",
+			"Type" : "String"
+		},
+		"obanBaseOutRaw": {
+			"Description" : "Bucket for the logging and stuff",
+			"Default" : "sca-oban-raw",
+			"Type" : "String"
+		},
+		"WebInstanceType": {
+            "Description": "Type of EC2 instance to launch for weberver",
+            "Type": "String",
+            "Default": "t2.nano",
+            "AllowedValues": [
+			    "t2.nano",
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+				"t2.large",
+                "m4.large",
+                "c4.large",
+                "r3.large",
+                "m4.4xlarge"
+            ],
+            "ConstraintDescription": "Must be a valid EC2 instance type."
+        },
+		"TemplateBaseUrl": {
+			"Description" : "Base url where this template was launched from",
+			"Type" : "String"
+		},
+		"WebSvrSg" : {
+			"Description" : "Security Group ID for web servers: WF-DevServers-WebSvrSg-1GSQWN2LGMK69",
+			"Default" : "sg-897ba1ec",
+			"Type" : "String"
+		},
+		"SCAAccessSg" : {
+			"Description" : "Default security group in VPC",
+			"Default" : "sg-7c5dbe19",
+			"Type" : "String"
+		},
+		"SqlSvrConsumerSg" : {
+			"Description" : "Security Group ID for consumer group: WF-DevServers-SqlSvrConsumerSg-1UOUT1OA6ZX4R",
+			"Default" : "sg-7c5dbe19",
+			"Type" : "String"
+		},
+		"WebServerSubnet" : {
+			"Description" : "Putting it in ELB subnet, outbound?",
+			"Default" : "subnet-957da3f0",
+			"Type" : "String"
+		},
+		"Environment" : {
+			"Description" : "Suspect this wont always be DEV",
+			"Default" : "DEV",
+			"Type" : "String"
+		},
+		"PublicFacing" : {
+			"Description" : "Whether to assign Public IP? External access required?",
+			"Type" : "String",
+			"AllowedValues": [
+				"true",
+				"false"
+			],
+			"Default": "false",
+			"ConstraintDescription": "Valid types: public or private"
+		}
+	},
+	"Resources" : {
+		"WebFrontEnd" : {
+		    "Type" : "AWS::EC2::Instance",
+			"Metadata" : {
+				"AWS::CloudFormation::Authentication":{
+					"DeploymentAccess":{
+						"type":"S3",
+						"roleName":{
+							"Ref":"DeploymentRole"
+						}
+					}
+				},
+				"AWS::CloudFormation::Init" : {
+					"config" : {
+						"files" : {
+								"C:\\cfn\\Monitoring\\BaseTask.xml.original" : {
+								"source": { "Fn::Join" : [ "", [
+									{ "Ref" : "TemplateBaseUrl" }, "Monitoring/BaseTask.xml.original"
+								]]},
+								"authentication": "DeploymentAccess"
+							},
+							
+							"C:\\cfn\\Monitoring\\Commons.ps1" : {
+								"source": { "Fn::Join" : [ "", [
+									{ "Ref" : "TemplateBaseUrl" }, "Monitoring/Commons.ps1"
+								]]},
+								"authentication": "DeploymentAccess"
+							},
+							
+							"C:\\cfn\\Monitoring\\Elmah.ps1" : {
+								"source": { "Fn::Join" : [ "", [
+									{ "Ref" : "TemplateBaseUrl" }, "Monitoring/Elmah.ps1"
+								]]},
+								"authentication": "DeploymentAccess"
+							},
+							
+							"C:\\cfn\\Monitoring\\AWSSDK.dll" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "Monitoring/AWSSDK.dll"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+
+							"C:\\cfn\\Monitoring\\EventLogs.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "Monitoring/EventLogs.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+							
+							"C:\\cfn\\Monitoring\\IisW3c.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "Monitoring/IisW3c.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+							
+							"C:\\cfn\\Monitoring\\Install.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "Monitoring/Install.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+
+							"C:\\cfn\\Monitoring\\Nlog.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "Monitoring/Nlog.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+							
+							"C:\\cfn\\Monitoring\\KinPerfmon.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "Monitoring/KinPerfmon.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+
+							"C:\\cfn\\Monitoring\\KinW3c.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "Monitoring/KinW3c.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+
+							"C:\\bootstrap\\scripts\\CustomUmbracoBootstrap.ps1" : {
+								"source" : { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "CustomUmbracoBootstrap.ps1"
+						      ]]},
+								"authentication" : "DeploymentAccess"
+							},
+
+							"C:\\cfn\\DSC\\Prerequisites.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "DSC/Prerequisites.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+
+							"C:\\cfn\\DSC\\mofs\\StationWebsites\\localhost.mof" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "DSC/mofs/StationWebsites/localhost.mof"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+
+							"C:\\cfn\\DSC\\mofs\\Careers\\localhost.mof" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "DSC/mofs/Careers/localhost.mof"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							}
+
+
+						},
+						"commands": {
+							"1-set-execution-policy": {
+								"command": "powershell -command \"set-executionpolicy unrestricted\"",
+								"waitAfterCompletion": "0"
+							},
+
+							"2-install-monitoring": {
+								"command": { "Fn::Join": [" ", [
+									"powershell.exe -ExecutionPolicy Unrestricted",
+									"C:\\cfn\\Monitoring\\Install.ps1",
+									"-bucket", {"Ref": "obanBaseOutRaw"}
+								]]},
+                                "waitAfterCompletion": "0"
+							},
+
+							"3-bootstrap-server": {
+								"command": { "Fn::Join": ["", [
+									"powershell.exe -ExecutionPolicy Unrestricted ",
+									"c:\\bootstrap\\scripts\\CustomUmbracoBootstrap.ps1 "
+								]]},
+                "waitAfterCompletion": "0"
+							}
+						}
+                    }
+				}
+
+			},
+			"Properties": {
+				"InstanceType" : { "Ref" : "WebInstanceType" },
+				"ImageId" : { "Ref" : "WebServerAmi" },
+				"KeyName" : { "Ref" : "KeyPairName" },
+				"SubnetId": { "Ref" : "WebServerSubnet" },
+				"SecurityGroupIds":[
+					{ "Ref" : "WebSvrSg" },
+					{ "Ref" : "SqlSvrConsumerSg" },
+					{ "Ref" : "SCAAccessSg" }
+				],
+
+				"Tags": [
+					{"Key": "Name","Value" : { "Fn::Join" : [ "", ["Umbraco Web Server ",{ "Ref" : "EnvironmentName" },".",{ "Ref" : "EnvironmentSuffix" }]]}}, 
+					{"Key": "Environment","Value" : "DEV"}, 
+					{"Key": "Scheduling","Value" : "BusinessHoursOnly"}, 
+					{"Key": "Project","Value" : "Umbraco CMS"}, 
+					{"Key": "DNS","Value" : { "Fn::Join" : [ ".", [{ "Ref" : "EnvironmentName" },{ "Ref" : "EnvironmentSuffix" }]]}}
+				],
+				"IamInstanceProfile": { "Ref" : "InstanceProfile" },
+				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+					"<script>\n",
+                    "cfn-init.exe -v -r WebFrontEnd -s ", { "Ref": "AWS::StackId" }, " --region ", { "Ref": "AWS::Region" },
+                    "\n</script>"
+				]]}},
+				"BlockDeviceMappings" : [
+					{
+						"DeviceName" : "/dev/sda1",
+						"Ebs" : { "VolumeSize" : "50", "VolumeType" : "gp2" }
+					},
+					{
+						"DeviceName" : "/dev/xvdk",
+						"Ebs" : { "VolumeSize" : "20", "VolumeType" : "gp2" }
+					}
+				]
+			}
+		},
+		
+		"InstanceProfile": {
+		  "Type": "AWS::IAM::InstanceProfile",
+		  "Properties": {
+		    "Path": "/",
+		    "Roles": [{ "Ref": "DeploymentRole" }]
+		  }
+		},
+		"PrimaryHitRecord" : {
+				"Type" : "AWS::Route53::RecordSet",
+				"Properties" : {
+				"HostedZoneName" :  { "Ref" : "EnvironmentSuffix" },
+				"Comment" : "DNS name for instance.",  
+				"Name" : { "Fn::Join" : [ "", ["sw-hit-",{ "Ref" : "EnvironmentName" },".",{ "Ref" : "EnvironmentSuffix" }]]},
+				"Type" : "A",
+				"TTL" : "900",
+				"ResourceRecords" : [{ "Fn::GetAtt" : [ "WebFrontEnd", "PrivateIp" ] }]
+			}
+		},
+		"PlayerHitRecord" : {
+				"Type" : "AWS::Route53::RecordSet",
+				"Properties" : {
+				"HostedZoneName" :  { "Ref" : "EnvironmentSuffix" },
+				"Comment" : "DNS name for instance.",  
+				"Name" : { "Fn::Join" : [ "", ["player.sw-hit-",{ "Ref" : "EnvironmentName" },".",{ "Ref" : "EnvironmentSuffix" }]]},
+				"Type" : "A",
+				"TTL" : "900",
+				"ResourceRecords" : [{ "Fn::GetAtt" : [ "WebFrontEnd", "PrivateIp" ] }]
+			}
+		},
+		"HitBackOfficeMRecord" : {
+				"Type" : "AWS::Route53::RecordSet",
+				"Properties" : {
+				"HostedZoneName" :  { "Ref" : "EnvironmentSuffix" },
+				"Comment" : "DNS name for instance.",  
+				"Name" : { "Fn::Join" : [ "", ["sw-hit-cms-",{ "Ref" : "EnvironmentName" },".",{ "Ref" : "EnvironmentSuffix" }]]},
+				"Type" : "A",
+				"TTL" : "900",
+				"ResourceRecords" : [{ "Fn::GetAtt" : [ "WebFrontEnd", "PrivateIp" ] }]
+			}
+		},
+		"PrimaryTripleMRecord" : {
+				"Type" : "AWS::Route53::RecordSet",
+				"Properties" : {
+				"HostedZoneName" :  { "Ref" : "EnvironmentSuffix" },
+				"Comment" : "DNS name for instance.",  
+				"Name" : { "Fn::Join" : [ "", ["sw-tripleM-",{ "Ref" : "EnvironmentName" },".",{ "Ref" : "EnvironmentSuffix" }]]},
+				"Type" : "A",
+				"TTL" : "900",
+				"ResourceRecords" : [{ "Fn::GetAtt" : [ "WebFrontEnd", "PrivateIp" ] }]
+			}
+		},
+		"PlayerTripleMRecord" : {
+				"Type" : "AWS::Route53::RecordSet",
+				"Properties" : {
+				"HostedZoneName" :  { "Ref" : "EnvironmentSuffix" },
+				"Comment" : "DNS name for instance.",  
+				"Name" : { "Fn::Join" : [ "", ["player.sw-tripleM-",{ "Ref" : "EnvironmentName" },".",{ "Ref" : "EnvironmentSuffix" }]]},
+				"Type" : "A",
+				"TTL" : "900",
+				"ResourceRecords" : [{ "Fn::GetAtt" : [ "WebFrontEnd", "PrivateIp" ] }]
+			}
+		},
+		"2GofmRecord" : {
+				"Type" : "AWS::Route53::RecordSet",
+				"Properties" : {
+				"HostedZoneName" :  { "Ref" : "EnvironmentSuffix" },
+				"Comment" : "DNS name for instance.",  
+				"Name" : { "Fn::Join" : [ "", ["sw-2gofm-",{ "Ref" : "EnvironmentName" },".",{ "Ref" : "EnvironmentSuffix" }]]},
+				"Type" : "A",
+				"TTL" : "900",
+				"ResourceRecords" : [{ "Fn::GetAtt" : [ "WebFrontEnd", "PrivateIp" ] }]
+			}
+		},
+				"KofmRecord" : {
+				"Type" : "AWS::Route53::RecordSet",
+				"Properties" : {
+				"HostedZoneName" :  { "Ref" : "EnvironmentSuffix" },
+				"Comment" : "DNS name for instance.",  
+				"Name" : { "Fn::Join" : [ "", ["sw-kofm-",{ "Ref" : "EnvironmentName" },".",{ "Ref" : "EnvironmentSuffix" }]]},
+				"Type" : "A",
+				"TTL" : "900",
+				"ResourceRecords" : [{ "Fn::GetAtt" : [ "WebFrontEnd", "PrivateIp" ] }]
+			}
+		},
+		"GoldFMRecord" : {
+				"Type" : "AWS::Route53::RecordSet",
+				"Properties" : {
+				"HostedZoneName" :  { "Ref" : "EnvironmentSuffix" },
+				"Comment" : "DNS name for instance.",  
+				"Name" : { "Fn::Join" : [ "", ["sw-goldfm-",{ "Ref" : "EnvironmentName" },".",{ "Ref" : "EnvironmentSuffix" }]]},
+				"Type" : "A",
+				"TTL" : "900",
+				"ResourceRecords" : [{ "Fn::GetAtt" : [ "WebFrontEnd", "PrivateIp" ] }]
+			}
+		},
+		"4tofmRecord" : {
+				"Type" : "AWS::Route53::RecordSet",
+				"Properties" : {
+				"HostedZoneName" :  { "Ref" : "EnvironmentSuffix" },
+				"Comment" : "DNS name for instance.",  
+				"Name" : { "Fn::Join" : [ "", ["sw-4tofm-",{ "Ref" : "EnvironmentName" },".",{ "Ref" : "EnvironmentSuffix" }]]},
+				"Type" : "A",
+				"TTL" : "900",
+				"ResourceRecords" : [{ "Fn::GetAtt" : [ "WebFrontEnd", "PrivateIp" ] }]
+			}
+		},
+		"mixRecord" : {
+				"Type" : "AWS::Route53::RecordSet",
+				"Properties" : {
+				"HostedZoneName" :  { "Ref" : "EnvironmentSuffix" },
+				"Comment" : "DNS name for instance.",  
+				"Name" : { "Fn::Join" : [ "", ["sw-mix-",{ "Ref" : "EnvironmentName" },".",{ "Ref" : "EnvironmentSuffix" }]]},
+				"Type" : "A",
+				"TTL" : "900",
+				"ResourceRecords" : [{ "Fn::GetAtt" : [ "WebFrontEnd", "PrivateIp" ] }]
+			}
+		},
+		"TripleMBackOfficeRecord" : {
+				"Type" : "AWS::Route53::RecordSet",
+				"Properties" : {
+				"HostedZoneName" :  { "Ref" : "EnvironmentSuffix" },
+				"Comment" : "DNS name for instance.",  
+				"Name" : { "Fn::Join" : [ "", ["sw-tripleM-cms-",{ "Ref" : "EnvironmentName" },".",{ "Ref" : "EnvironmentSuffix" }]]},
+				"Type" : "A",
+				"TTL" : "900",
+				"ResourceRecords" : [{ "Fn::GetAtt" : [ "WebFrontEnd", "PrivateIp" ] }]
+			}
+		},
+		"PrimaryCareersRecord" : {
+				"Type" : "AWS::Route53::RecordSet",
+				"Properties" : {
+				"HostedZoneName" :  { "Ref" : "EnvironmentSuffix" },
+				"Comment" : "DNS name for instance.",  
+				"Name" : { "Fn::Join" : [ "", ["Careers-",{ "Ref" : "EnvironmentName" },".",{ "Ref" : "EnvironmentSuffix" }]]},
+				"Type" : "A",
+				"TTL" : "900",
+				"ResourceRecords" : [{ "Fn::GetAtt" : [ "WebFrontEnd", "PrivateIp" ] }]
+			}
+		}
+	},
+	"Outputs" : {
+		"DevMachineIP" : {
+			"Value" : { "Fn::GetAtt": ["WebFrontEnd", "PrivateIp"]},
+			"Description" : "Private IP of the web server."
+		},
+		"InstanceID" : {
+		"Value" : { "Ref": "WebFrontEnd"},
+			"Description" : "ID of the instance"
+		}
+	}
+}	

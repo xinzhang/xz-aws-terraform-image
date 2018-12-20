@@ -1,0 +1,884 @@
+{
+	"AWSTemplateFormatVersion" : "2010-09-09",
+
+	"Description" : "Common WebStack for AWS www sites - 1 ELB",
+
+	"Parameters" : {
+		"KeyPairName": {
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+			"Default": "none-prod",
+            "Type": "String"
+        },
+		"InstanceRole": {
+			"Description" : "Role that allow access to the required resource for purpose of deployment. [misc.outputs.DeploymentRole]",
+			"Type": "String"
+		},
+		"SslCertId" : {
+			"Description": "Id of the SSL certificate to use.",
+			"Default" : "arn:aws:iam::308403417902:server-certificate/scalabs.io",
+            "Type": "String"
+		},
+
+		"WebDeployPackage": {
+			"Description" : "Url stem segment of the web deploy package.",
+			"Type" : "String"
+		},
+		"WebBootstrapScript": {
+			"Description" : "Url stem segment of the web deploy package.",
+			"Default": "WebServerBootstrap.ps1",
+			"Type" : "String"
+		},
+		"BackgroundProcess":{
+			"Description" : "<type>, <assembly> of the class that inplement IProcess. Default to $null for no startup class.",
+			"Default": "",
+			"Type" : "String"
+		},
+
+		"SpotInstancePrice": {
+            "Description": "Price for ec2 spot instance.",
+            "Type": "String",
+            "Default": "0.1",
+            "ConstraintDescription": "Must be a valid EC2 instance type."
+        },
+		"SpotInstanceType": {
+            "Description": "Type of EC2 instance to launch for spot instance frontend",
+            "Type": "String",
+            "Default": "m3.medium",
+            "AllowedValues": [
+				"t2.micro",
+                "t2.small",
+	            "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge"
+            ],
+            "ConstraintDescription": "Must be a valid EC2 instance type. n2"
+        },
+
+		"InstanceType": {
+            "Description": "Type of EC2 instance to launch for on-demand frontend",
+            "Type": "String",
+            "Default": "t2.small",
+            "AllowedValues": [
+				"t2.micro",
+                "t2.small",
+				"t2.medium",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge"
+            ],
+            "ConstraintDescription": "Must be a valid EC2 instance type. n1"
+        },
+		"WebServerAmi": {
+			"Description" : "Image id of the frontend",
+			"Default" : "ami-23265b19",
+			"Type" : "String"
+		},
+
+		"publicOutVpcId": {
+		  "Description" : "VPCid associated with the subnets. [elb.parameters.VpcId]",
+		  "Type": "String"
+		},
+
+		"ElbSubnet1Id": {
+		  "Description" : "Subnet to run HA web cluster on. [elb.resources.ElbSubnet1]",
+		  "Type": "String"
+		},
+		"ElbSubnet2Id": {
+		  "Description" : "Subnet to run HA web cluster on. [elb.resources.ElbSubnet2]",
+		  "Type": "String"
+		},
+		
+		"WebServerSubnet1Id": {
+		  "Description" : "Subnet to run HA web cluster on. [elb.resources.PvtWebSubnet1]",
+		  "Type": "String"
+		},
+		"WebServerSubnet2Id": {
+		  "Description" : "Subnet to run HA web cluster on. [elb.resources.PvtWebSubnet2]",
+		  "Type": "String"
+		},
+		
+		"sqlSvrSingleInUser": {
+            "Description": "Sql server database username. [sqlSvrSingle.parameters.User]",
+            "Type": "String",
+			"Default": "sqladmin"
+        },
+		"sqlSvrSingleInPassword": {
+            "Description": "Sql server database password.",
+            "Type": "String",
+			"Default": "Password1234!@#$",
+			"NoEcho": "True"
+        },
+		"sqlSvrSingleOutConsumerSg": {
+            "Description": "Sql server consuming security group. [sqlSvrSingle.outputs.ConsumerSg]",
+            "Type": "String"
+		},
+		"obanBaseOutRaw": {
+			"Description" : "Image id of the frontend [obanBase.outputs.Raw]",
+			"Default" : "sca-oban-raw",
+			"Type" : "String"
+		},
+		"miscOutOperationNotification": {
+			"Description" : "Alert notifications. [misc.outputs.OperationNotification]",
+			"Type" : "String"
+		},
+
+		"TemplateBaseUrl": {
+		  "Description" : "Base url where this template was launched from",
+		  "Type" : "String"
+		},
+		"TemplateEnv": {
+			"Description" : "Environment name.",
+			"Type" : "String"
+		},
+		
+		"IsPublicFacing": {
+			"Description" : "Is publicly accessable deployment.",
+			"Type" : "String",
+			"AllowedValues": [
+				"true",
+				"false"
+			],
+			"Default": "false",
+			"ConstraintDescription": "Valid schemes: 'internet-facing' or 'internal'."
+		},
+		"ProvisionElb": {
+			"Description" : "Whether to provision elb or not.",
+			"Type" : "String",
+			"AllowedValues": [
+				"true",
+				"false"
+			],
+			"Default": "true",
+			"ConstraintDescription": "Valid options are 'true' or 'false'."
+		},
+		"ProvisionCF": {
+			"Description" : "Whether to provision CF or not.",
+			"Type" : "String",
+			"AllowedValues": [
+				"true",
+				"false"
+			],
+			"Default": "false",
+			"ConstraintDescription": "Valid options are 'true' or 'false'."
+		},
+		"SingleInstance": {
+			"Description" : "Whether this deployment has only a single instance or not.",
+			"Type" : "String",
+			"AllowedValues": [
+				"true",
+				"false"
+			],
+			"Default": "false",
+			"ConstraintDescription": "Valid options are 'true' or 'false'."
+		},
+		"RedisInstanceType": {
+            "Description": "Type of Redis instance to launch. Leave blank to NOT provision Redis.",
+            "Type": "String",
+            "Default": "",
+            "AllowedValues": [
+				"",
+				"cache.t2.micro",
+                "cache.t2.small",
+                "cache.m3.medium",
+                "cache.m3.large",
+                "cache.m3.xlarge",
+                "cache.m3.2xlarge",
+                "cache.r3.large",
+                "cache.r3.xlarge",
+                "cache.r3.2xlarge",
+                "cache.r3.4xlarge",
+                "cache.r3.8xlarge"
+            ],
+            "ConstraintDescription": "Must be a valid ElasticCache instance type."
+        },
+		"RedisParametersGroup": {
+            "Description": "Parameters Group for redis. Set to blank to use stack specific redis parameters.",
+            "Type": "String",
+            "Default": "default.redis2.8"
+        },
+		"RedisSubnetGroup" : {
+            "Description": "Redis subnet group.",
+            "Type": "String",
+			"Default": "sca"
+        },
+		"RedisNodeCount" : {
+			"Description": "Redis node sount.",
+            "Type": "Number",
+			"Default": "1"
+		},
+
+		"ElbSg": {
+		  "Description" : "Security group for ELB. [elb.resources.HttpElbSecGroup]",
+		  "Type": "String"
+		},
+		"WebSg": {
+		  "Description" : "Security group for Web Server. [elb.resources.HttpWebServerSecGroup]",
+		  "Type": "String"
+		}
+	},
+	
+	"Conditions" : {
+		"IsPublicFacingCondition" : {
+			"Fn::Equals": [{"Ref":"IsPublicFacing"},"true"]
+		},
+		"IsRedisRequired" : {
+			"Fn::Not": [{"Fn::Equals": [{"Ref":"RedisInstanceType"},""]}]
+		},
+		"IsRedisParamsRequired" : {
+			"Fn::And": [
+				{ "Condition": "IsRedisRequired" },
+				{ "Fn::Equals": [{"Ref":"RedisParametersGroup"},""] }
+			]
+		},
+		"IsElbRequired" : {
+			"Fn::Equals" : [{"Ref":"ProvisionElb"}, "true"]
+		},
+		"IsCfRequired" : {
+			"Fn::Equals" : [{"Ref":"ProvisionCF"}, "true"]
+		},
+		"IsSingleInstance" : {
+			"Fn::Equals" : [{"Ref":"SingleInstance"}, "true"]
+		},
+		"IsNotSingleInstance" : {
+			"Fn::Equals" : [{"Ref":"SingleInstance"}, "false"]
+		}
+	},
+
+	"Resources" : {
+		"WebServerGroup" : {
+			"Type" : "AWS::AutoScaling::AutoScalingGroup",
+			"Properties" : {
+				"VPCZoneIdentifier": [
+					{"Ref":"WebServerSubnet1Id"},
+					{"Ref":"WebServerSubnet2Id"}
+				],
+				"AvailabilityZones": [
+					"ap-southeast-2a",
+					"ap-southeast-2b"
+				],
+				"HealthCheckGracePeriod" : 1800,
+				"LaunchConfigurationName" : { "Ref" : "WebFrontEndLaunchConfiguration" },
+				"MinSize" : "1",
+				"MaxSize" : { "Fn::If": ["IsSingleInstance", "1", "8" ] },
+				"LoadBalancerNames" : [ { "Ref" : "DonateGM54KGW"} ],
+				"Tags" : [{
+                "Key": "Name", 
+                "PropagateAtLaunch" : "True", 
+                "Value" : {"Fn::Join": [" ", [{ "Ref" : "WebDeployPackage" }, " Web Server"]]}
+                },
+                {
+                "Key": "GorillaStack", 
+                "PropagateAtLaunch" : "True", 
+                "Value" : {"Fn::Join": ["-", [{ "Ref": "TemplateEnv" }, "OnDemand"]]}
+                }]
+			}
+		},
+		"WebFrontEndLaunchConfiguration" : {
+		    "Type" : "AWS::AutoScaling::LaunchConfiguration",
+			"Metadata" : {
+				"AWS::CloudFormation::Authentication":{
+					"DeploymentAccess": {
+						"type":"S3",
+						"roleName":{
+							"Ref":"InstanceRole"
+						}
+					}
+				},
+				"AWS::CloudFormation::Init" : {
+					"config" : {
+						"files" : {
+							"C:\\cfn\\Monitoring\\BaseTask.xml.original" : {
+								"source": { "Fn::Join" : [ "", [
+									{ "Ref" : "TemplateBaseUrl" }, "Monitoring/BaseTask.xml.original"
+								]]},
+								"authentication": "DeploymentAccess"
+							},
+							
+							"C:\\cfn\\Monitoring\\Commons.ps1" : {
+								"source": { "Fn::Join" : [ "", [
+									{ "Ref" : "TemplateBaseUrl" }, "Monitoring/Commons.ps1"
+								]]},
+								"authentication": "DeploymentAccess"
+							},
+							
+							"C:\\cfn\\Monitoring\\Elmah.ps1" : {
+								"source": { "Fn::Join" : [ "", [
+									{ "Ref" : "TemplateBaseUrl" }, "Monitoring/Elmah.ps1"
+								]]},
+								"authentication": "DeploymentAccess"
+							},
+							
+							"C:\\cfn\\Monitoring\\AWSSDK.dll" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "Monitoring/AWSSDK.dll"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+
+							"C:\\cfn\\Monitoring\\EventLogs.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "Monitoring/EventLogs.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+							
+							"C:\\cfn\\Monitoring\\IisW3c.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "Monitoring/IisW3c.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+							
+							"C:\\cfn\\Monitoring\\Install.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "Monitoring/Install.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+
+							"C:\\cfn\\Monitoring\\Nlog.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "Monitoring/Nlog.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+							
+							"C:\\cfn\\Monitoring\\KinPerfmon.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "Monitoring/KinPerfmon.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+
+							"C:\\cfn\\Monitoring\\KinW3c.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "Monitoring/KinW3c.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+
+							"C:\\bootstrap\\scripts\\CommonStackBootstrap.ps1" : {
+								"source" : { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "CommonStackBootstrap.ps1"
+						      ]]},
+								"authentication" : "DeploymentAccess"
+							},
+							
+							"C:\\bootstrap\\Website\\Site.zip" : {
+								"source" : { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, { "Ref" : "WebDeployPackage" }, "/Site.zip"
+						      ]]},
+								"authentication" : "DeploymentAccess"
+							},
+
+							"C:\\bootstrap\\Website\\Site.SetParameters.et.xml" : {
+								"source" : { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, { "Ref" : "WebDeployPackage" }, "/Site.SetParameters.", {"Ref": "TemplateEnv"}, ".xml"
+						      ]]},
+								"authentication" : "DeploymentAccess"
+							},
+
+							"C:\\bootstrap\\Website\\Site.deploy.cmd" : {
+								"source" : { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, { "Ref" : "WebDeployPackage" }, "/Site.deploy.cmd"
+						      ]]},
+								"authentication" : "DeploymentAccess"
+							},
+
+							"c:\\bootstrap\\scripts\\WebServerBootstrap.ps1" : {
+								"source" : { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, {"Ref": "WebBootstrapScript"}
+						      ]]},
+								"authentication" : "DeploymentAccess"
+							},
+
+							"c:\\bootstrap\\settings\\sit-settings.csv" : {
+								"content" : { "Fn::Join" : ["", [
+									"SqlUsername\t", { "Ref" : "sqlSvrSingleInUser" }, "\n",
+									"SqlPassword\t", { "Ref" : "sqlSvrSingleInPassword" }, "\n",
+									{"Fn::If":["IsRedisRequired",{ "Fn::Join":["",[
+										"RedisId\t", {"Ref" : "Redis"}, "\n"
+									]]},""]}
+								]]}
+							}
+						},
+						"commands": {
+							"1-set-executiong-policy": {
+								"command": "powershell -command \"set-executionpolicy unrestricted\"",
+								"waitAfterCompletion": "0"
+							},
+
+							"2-install-monitoring": {
+								"command": { "Fn::Join": [" ", [
+									"powershell.exe -ExecutionPolicy Unrestricted",
+									"C:\\cfn\\Monitoring\\Install.ps1",
+									"-bucket", {"Ref": "obanBaseOutRaw"}
+								]]},
+                                "waitAfterCompletion": "0"
+							},
+
+							"3-bootstrap-server": {
+								"command": { "Fn::Join": ["", [
+									"powershell.exe -ExecutionPolicy Unrestricted ",
+									"c:\\bootstrap\\scripts\\WebServerBootstrap.ps1 ",
+									"-bkgrdclass '", {"Ref":"BackgroundProcess"}, "'"
+								]]},
+                                "waitAfterCompletion": "0"
+							},
+
+							"5-signal": {
+								"command": { "Fn::Join": [ "", [
+									"cfn-signal.exe -e %ERRORLEVEL% \"", { "Ref": "WebSvrWaitConditionHandle" }, "\""
+								]]}
+							}
+						}
+                    }
+				}
+			},
+			"Properties": {
+				"InstanceType" : { "Ref" : "InstanceType" },
+				"ImageId" : { "Ref" : "WebServerAmi" },
+				"KeyName" : { "Ref" : "KeyPairName" },
+				"AssociatePublicIpAddress": "False",
+				"SecurityGroups":[
+					{ "Ref" : "WebSg" },
+					{ "Ref" : "sqlSvrSingleOutConsumerSg" },
+					{ "Fn::If" : [
+						"IsRedisRequired",
+						{"Ref": "WebForRedisSg"},
+						{"Ref": "AWS::NoValue"}
+					]}
+				],
+				"IamInstanceProfile": { "Ref" : "WebInstanceProfile" },
+				  "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+					"<script>\n",
+                    "cfn-init.exe -v -r WebFrontEndLaunchConfiguration -s ", { "Ref": "AWS::StackId" }, " --region ", { "Ref": "AWS::Region" },
+                    "\n</script>"
+				]]}},
+				"BlockDeviceMappings" : [
+				   {
+					  "DeviceName" : "/dev/sda1",
+					  "Ebs" : { "VolumeSize" : "50", "VolumeType" : "gp2" }
+				   },
+				   {
+					  "DeviceName" : "/dev/xvdk",
+					  "Ebs" : { "VolumeSize" : "30" }
+				   }
+				]
+			}
+		},
+
+		"WebSpotServerGroup" : {
+			"Type" : "AWS::AutoScaling::AutoScalingGroup",
+            "Condition": "IsNotSingleInstance",
+			"Properties" : {
+				"VPCZoneIdentifier": [
+					{"Ref":"WebServerSubnet1Id"},
+					{"Ref":"WebServerSubnet2Id"}
+				],
+				"AvailabilityZones": [
+					"ap-southeast-2a",
+					"ap-southeast-2b"
+				],
+				"HealthCheckGracePeriod" : 1800,
+				"LaunchConfigurationName" : { "Ref" : "WebSpotFrontEndLaunchConfiguration" },
+				"MinSize" : "0",
+				"MaxSize" : "4",
+				"LoadBalancerNames" :  [ {"Ref" : "DonateGM54KGW"} ],
+				"Tags" : [{
+                "Key": "Name", 
+                "PropagateAtLaunch" : "True", 
+                "Value" : {"Fn::Join": [" ", [{ "Ref" : "WebDeployPackage" }, " Web Server (Spot)"]]}
+				},{
+                "Key": "GorillaStack", 
+                "PropagateAtLaunch" : "True", 
+                "Value" : {"Fn::Join": ["-", [{ "Ref": "TemplateEnv" }, "Spot"]]}
+                }
+                ]
+			}
+		},
+		"WebSpotFrontEndLaunchConfiguration" : {
+		    "Type" : "AWS::AutoScaling::LaunchConfiguration",
+            "Condition": "IsNotSingleInstance",
+			"Metadata" : {
+				"AWS::CloudFormation::Authentication":{
+					"DeploymentAccess":{
+						"type":"S3",
+						"roleName":{
+						"Ref":"InstanceRole"
+						}
+					}
+				}
+			},
+			"Properties": {
+				"SpotPrice" : { "Ref" : "SpotInstancePrice" },
+				"InstanceType" : { "Ref" : "SpotInstanceType" },
+				"ImageId" : { "Ref" : "WebServerAmi" },
+				"KeyName" : { "Ref" : "KeyPairName" },
+				"AssociatePublicIpAddress": "False",
+				"SecurityGroups":[
+					{ "Ref" : "WebSg" },
+					{ "Ref" : "sqlSvrSingleOutConsumerSg" },
+					{ "Fn::If" : [
+						"IsRedisRequired",
+						{"Ref": "WebForRedisSg"},
+						{"Ref": "AWS::NoValue"}
+					]}
+				],
+				"IamInstanceProfile": { "Ref" : "WebInstanceProfile" },
+				  "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+					"<script>\n",
+                    "cfn-init.exe -v -r WebFrontEndLaunchConfiguration -s ", { "Ref": "AWS::StackId" }, " --region ", { "Ref": "AWS::Region" },
+                    "\n</script>"
+				]]}},
+				"BlockDeviceMappings" : [
+				   {
+					  "DeviceName" : "/dev/sda1",
+					  "Ebs" : { "VolumeSize" : "50", "VolumeType" : "gp2" }
+				   },
+				   {
+					  "DeviceName" : "/dev/xvdk",
+					  "Ebs" : { "VolumeSize" : "30" }
+				   }
+				]
+			}
+		},
+
+		"DonateGM54KGW" : {
+			"Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+			"Condition" : "IsElbRequired",
+			"Properties" : {
+				"Subnets": [
+					{"Ref":"ElbSubnet1Id"},
+					{"Ref":"ElbSubnet2Id"}
+				],
+				"Listeners" : [
+					{
+						"LoadBalancerPort" : "80",
+						"InstancePort" : "9002",
+						"Protocol" : "HTTP"
+					},
+					{
+						"LoadBalancerPort" : "443",
+						"InstancePort" : "9002",
+						"Protocol" : "HTTPS",
+						"InstanceProtocol": "HTTP",
+						"SSLCertificateId": "arn:aws:iam::308403417902:server-certificate/donate.giveme5forkids.com.au-2018"
+					}
+				],
+				"HealthCheck" : {
+					"Target" : { "Fn::Join" : [ "", ["HTTP:9002/healthcheck.axd"]]},
+					"HealthyThreshold" : "3",
+					"UnhealthyThreshold" : "5",
+					"Interval" : "30",
+					"Timeout" : "5"
+				},
+				"AccessLoggingPolicy" : {
+					"EmitInterval": "5",
+					"Enabled": "true",
+					"S3BucketName": {"Ref": "obanBaseOutRaw"}
+				},
+				"SecurityGroups": [{ "Ref": "ElbSg" }],
+				"Scheme": { "Fn::If" : [
+					"IsPublicFacingCondition",
+					"internet-facing",
+					"internal"
+				]}
+			}
+		},
+		
+		"SpotScaleUp" : {
+			"Type" : "AWS::AutoScaling::ScalingPolicy",
+            "Condition": "IsNotSingleInstance",
+			"Properties" : {
+				"AdjustmentType" : "ChangeInCapacity",
+				"AutoScalingGroupName" : {"Ref": "WebSpotServerGroup"},
+				"Cooldown" : "1800",
+				"ScalingAdjustment" : "3"
+			}
+		},
+		"SpotScaleDown" : {
+			"Type" : "AWS::AutoScaling::ScalingPolicy",
+            "Condition": "IsNotSingleInstance",
+			"Properties" : {
+				"AdjustmentType" : "ChangeInCapacity",
+				"AutoScalingGroupName" : {"Ref": "WebSpotServerGroup"},
+				"Cooldown" : "3600",
+				"ScalingAdjustment" : "-1"
+			}
+		},
+		"OnDemandScaleUp" : {
+			"Type" : "AWS::AutoScaling::ScalingPolicy",
+            "Condition": "IsNotSingleInstance",
+			"Properties" : {
+				"AdjustmentType" : "ChangeInCapacity",
+				"AutoScalingGroupName" : {"Ref": "WebServerGroup"},
+				"Cooldown" : "1800",
+				"ScalingAdjustment" : "3"
+			}
+		},
+		"OnDemandScaleDown" : {
+			"Type" : "AWS::AutoScaling::ScalingPolicy",
+            "Condition": "IsNotSingleInstance",
+			"Properties" : {
+				"AdjustmentType" : "ChangeInCapacity",
+				"AutoScalingGroupName" : {"Ref": "WebServerGroup"},
+				"Cooldown" : "1800",
+				"ScalingAdjustment" : "-1"
+			}
+		},
+		"CpuSpotUpAlarm" :{
+			"Type" : "AWS::CloudWatch::Alarm",
+            "Condition": "IsNotSingleInstance",
+			"Properties" : {
+				"AlarmActions": [
+					{"Ref": "SpotScaleUp"}
+				],
+				"ComparisonOperator": "GreaterThanThreshold",
+				"Dimensions": [
+					{ "Name": "AutoScalingGroupName", "Value": { "Ref": "WebSpotServerGroup" } }
+				],
+				"EvaluationPeriods": "2",
+				"MetricName": "CPUUtilization",
+				"Namespace": "AWS/EC2",
+				"Period": "300",
+				"Statistic": "Average",
+				"Threshold": "60"
+			}
+		},
+		"CpuSpotDownAlarm" :{
+			"Type" : "AWS::CloudWatch::Alarm",
+            "Condition": "IsNotSingleInstance",
+			"Properties" : {
+				"AlarmActions": [
+					{"Ref": "SpotScaleDown"}
+				],
+				"ComparisonOperator": "LessThanThreshold",
+				"Dimensions": [
+					{ "Name": "AutoScalingGroupName", "Value": { "Ref": "WebSpotServerGroup" } }
+				],
+				"EvaluationPeriods": "12",
+				"MetricName": "CPUUtilization",
+				"Namespace": "AWS/EC2",
+				"Period": "300",
+				"Statistic": "Average",
+				"Threshold": "30"
+			}
+		},
+		"CpuOnDemandUpAlarm" :{
+			"Type" : "AWS::CloudWatch::Alarm",
+            "Condition": "IsNotSingleInstance",
+			"Properties" : {
+				"AlarmActions": [
+					{"Ref": "OnDemandScaleUp"},
+					{"Ref": "SpotScaleUp"}
+				],
+				"ComparisonOperator": "GreaterThanThreshold",
+				"Dimensions": [
+					{ "Name": "AutoScalingGroupName", "Value": { "Ref": "WebServerGroup" } }
+				],
+				"EvaluationPeriods": "2",
+				"MetricName": "CPUUtilization",
+				"Namespace": "AWS/EC2",
+				"Period": "300",
+				"Statistic": "Average",
+				"Threshold": "70"
+			}
+		},
+		"CpuOnDemandDownAlarm" :{
+			"Type" : "AWS::CloudWatch::Alarm",
+            "Condition": "IsNotSingleInstance",
+			"Properties" : {
+				"AlarmActions": [
+					{"Ref": "OnDemandScaleDown"}
+				],
+				"ComparisonOperator": "LessThanThreshold",
+				"Dimensions": [
+					{ "Name": "AutoScalingGroupName", "Value": { "Ref": "WebServerGroup" } }
+				],
+				"EvaluationPeriods": "12",
+				"MetricName": "CPUUtilization",
+				"Period": "300",
+				"Namespace": "AWS/EC2",
+				"Statistic": "Average",
+				"Threshold": "30"
+			}
+		},
+
+		"AlarmCpuCredit" :{
+			"Type" : "AWS::CloudWatch::Alarm",
+			"Properties" : {
+				"AlarmActions": [
+					{"Ref": "miscOutOperationNotification"}
+				],
+				"ComparisonOperator": "LessThanThreshold",
+				"Dimensions": [
+					{ "Name": "AutoScalingGroupName", "Value": { "Ref": "WebServerGroup" } }
+				],
+				"EvaluationPeriods": "5",
+				"MetricName": "CPUCreditBalance",
+				"Namespace": "AWS/EC2",
+				"Period": "60",
+				"Statistic": "Minimum",
+				"Threshold": "20"
+			}
+		},
+		"AlarmInstanceFailure" :{
+			"Type" : "AWS::CloudWatch::Alarm",
+			"Properties" : {
+				"OKActions": [
+					{"Ref": "miscOutOperationNotification"}
+				],
+				"AlarmActions": [
+					{"Ref": "miscOutOperationNotification"}
+				],
+				"ComparisonOperator": "GreaterThanThreshold",
+				"Dimensions": [
+					{ "Name": "AutoScalingGroupName", "Value": { "Ref": "WebServerGroup" } }
+				],
+				"EvaluationPeriods": "1",
+				"MetricName": "StatusCheckFailed",
+				"Namespace": "AWS/EC2",
+				"Period": "60",
+				"Statistic": "Maximum",
+				"Threshold": "0"
+			}
+		},
+
+		"AlarmInstanceUnhealthy" :{
+			"Type" : "AWS::CloudWatch::Alarm",
+			"Condition" : "IsElbRequired",
+			"Properties" : {
+				"OKActions": [
+					{"Ref": "miscOutOperationNotification"}
+				],
+				"AlarmActions": [
+					{"Ref": "miscOutOperationNotification"}
+				],
+				"ComparisonOperator": "GreaterThanThreshold",
+				"Dimensions": [
+					{ "Name": "AutoScalingGroupName", "Value": { "Ref": "WebServerGroup" } }
+				],
+				"EvaluationPeriods": "1",
+				"MetricName": "UnHealthyHostCount",
+				"Namespace": "AWS/EC2",
+				"Period": "60",
+				"Statistic": "Maximum",
+				"Threshold": "0"
+			}
+		},
+
+		"WebForRedisSg": {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Condition" : "IsRedisRequired",
+			"Properties" : {
+				"GroupDescription" : {"Fn::Join": [" ", [
+					{ "Ref" : "WebDeployPackage" }, " Web Servers. Allow all outbound but only allow http and https traffic inbound from the http(s) loadbalancer."
+				]]},
+				"SecurityGroupIngress" : [],
+				"SecurityGroupEgress" : [
+				{
+					"IpProtocol": "-1",
+					"CidrIp": "0.0.0.0/0"
+				}],
+				"VpcId" : { "Ref" : "publicOutVpcId"},
+				"Tags": [{"Key": "Name", "Value" : {"Fn::Join": [" ", [
+					{ "Ref" : "WebDeployPackage" }, " Web Servers"
+				]]}}]
+			}
+		},
+
+		"WebInstanceProfile": {
+			"Type": "AWS::IAM::InstanceProfile",
+			"Properties": {
+				"Path": "/",
+				"Roles": [{ "Ref": "InstanceRole" }]
+			}
+		},
+		"StackSpecificPolicy" : {
+			"Type": "AWS::IAM::Policy",
+			"Properties": {
+				"PolicyName": "root",
+				"PolicyDocument": {
+					"Version" : "2012-10-17",
+					"Statement": [
+						{ "Effect": "Allow", "Action": "elasticache:DescribeCacheSecurityGroup", "Resource": "*" }
+					]
+				},
+				"Roles": [{ "Ref": "InstanceRole" }]
+			}
+		},
+
+		"WebSvrWaitCondition" : {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "Properties": {
+                "Handle": { "Ref": "WebSvrWaitConditionHandle" },
+                "Timeout": "3000"
+            }
+        },
+        "WebSvrWaitConditionHandle" : {
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+
+		"Redis" : {
+			"Type" : "AWS::ElastiCache::CacheCluster",
+			"Condition": "IsRedisRequired",
+			"Properties" :
+			{
+				"AutoMinorVersionUpgrade" : "false",
+				"CacheNodeType" : {"Ref": "RedisInstanceType"},
+				"CacheParameterGroupName" : { "Fn::If" : [
+					"IsRedisParamsRequired",
+					{"Ref": "RedisParameters"},
+					{"Ref": "RedisParametersGroup"}
+				]},
+				"NumCacheNodes" : { "Ref": "RedisNodeCount" },
+				"CacheSubnetGroupName" : {"Ref": "RedisSubnetGroup"},
+				"Engine" : "redis",
+				"VpcSecurityGroupIds" : [{"Ref": "RedisSg"}]
+			}
+		},
+		"RedisParameters" : {
+			"Type": "AWS::ElastiCache::ParameterGroup",
+			"Condition": "IsRedisParamsRequired",
+			"Properties": {
+				"CacheParameterGroupFamily" : "redis2.8",
+				"Description" : {"Fn::Join": ["", [
+					{ "Ref" : "WebDeployPackage" }, "'s Redis ephemeral server parameters. These are per-stack."
+				]]},
+				"Properties" : {}
+			}
+		},
+		"RedisSg" : {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Condition": "IsRedisRequired",
+			"Properties" : {
+				"GroupDescription" : {"Fn::Join": [" ", [
+					{ "Ref" : "WebDeployPackage" }, " Redis Ephemeral Servers. These are per-stack."
+				]]},
+				"SecurityGroupIngress" : [{
+					"IpProtocol": "6",
+					"FromPort": "6379",
+					"ToPort": "6379",
+					"SourceSecurityGroupId": { "Ref": "WebForRedisSg" }
+				}],
+				"VpcId" : { "Ref" : "publicOutVpcId"},
+				"Tags": [{"Key": "Name", "Value" : {"Fn::Join": [" ", [
+					{ "Ref" : "WebDeployPackage" }, "Redis Ephemeral Servers"
+				]]}}]
+			}
+		}
+	},
+
+	"Outputs" : {
+		"DonateGM54KGWURL" : {
+			"Value" : { "Fn::If": ["IsElbRequired",
+				{ "Fn::GetAtt" : ["DonateGM54KGW", "DNSName"] },
+				""
+			]},
+			"Description" : "Public DNS name of GiveMe5"
+		}
+	}
+}

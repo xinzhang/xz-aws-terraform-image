@@ -1,0 +1,381 @@
+{
+	"AWSTemplateFormatVersion" : "2010-09-09",
+
+	"Description" : "",
+
+	"Parameters" : {
+		"KeyPairName": {
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+			"Default": "none-prod",
+            "Type": "String"
+        },
+		"DeploymentRole": {
+		  "Description" : "Role that allow access to the required resource for purpose of deployment.",
+		  "Type": "String",
+		  "Default": "Deployment"
+		},
+
+		"User": {
+            "Description": "Sql server database username.",
+            "Type": "String",
+            "Default": "sqladmin"
+        },
+		"Pass": {
+            "Description": "Sql server database password.",
+            "Type": "String",
+            "NoEcho": "true",
+			"Default": "Password1234!@#$"
+        },
+
+		"SqlServerAmi": {
+			"Description" : "Image id of the frontend",
+			"Default" : "ami-119af52b",
+			"Type" : "String"
+		},
+		"SqlInstanceType": {
+            "Description": "Type of EC2 instance to launch for frontend",
+            "Type": "String",
+            "Default": "t2.small",
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge"
+            ],
+            "ConstraintDescription": "Must be a valid EC2 instance type."
+        },
+		"WebServerAmi" : {
+			"Description" : "Image id of the frontend",
+			"Default" : "ami-efd2bdd5",
+			"Type" : "String"
+		},
+		"WebInstanceType": {
+            "Description": "Type of EC2 instance to launch for frontend",
+            "Type": "String",
+            "Default": "t2.small",
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge"
+            ],
+            "ConstraintDescription": "Must be a valid EC2 instance type."
+        },
+
+		"vpnSecurityOutVpcPrefix": {
+		  "Description": "Vpc prefix.",
+		  "Type": "String"
+		},
+		"securityOutSubnet1Id": {
+		  "Description" : "Subnet 1 for clustering",
+		  "Type": "String"
+		},
+		"securityOutSubnet2Id": {
+		  "Description" : "Subnet 2 for clustering",
+		  "Type": "String"
+		},
+		"securityOutAclId": {
+		  "Description" : "Security group of the underlying subnet.",
+		  "Type": "String"
+		},
+		"securityOutVpcId": {
+		  "Description" : "Id of the VPC that the subnet db group depends on.",
+		  "Type": "String"
+		},
+		"securityInSubnet1Prefix" : {
+		  "Description" : "Prefix for subnet 1. The number y in x.x.y.x",
+		  "Type" : "Number"
+		},
+		"securityInSubnet2Prefix" : {
+		  "Description" : "Prefix for subnet 2. The number y in x.x.y.x",
+		  "Type" : "Number"
+		},
+		"LsZmqPublisherSg": {
+            "Description": "Security group to publish.",
+            "Type": "String"
+		},
+
+		"TemplateBaseUrl": {
+			"Description" : "Base url where this template was launched from",
+			"Type" : "String"
+		},
+		"TemplateEnv" : {
+			"Description" : "Base url where this template was launched from",
+			"Type" : "String"
+		}
+	},
+
+	"Resources" : {
+		"WebFrontEnd" : {
+		    "Type" : "AWS::EC2::Instance",
+			"Metadata" : {
+				"AWS::CloudFormation::Authentication":{
+					"DeploymentAccess":{
+						"type":"S3",
+						"roleName":{
+							"Ref":"DeploymentRole"
+						}
+					}
+				},
+				"AWS::CloudFormation::Init" : {
+					"config" : {
+						"files" : {
+							"C:\\cfn\\Monitoring\\BaseTask.xml.original" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "CfnUtils/Monitoring/BaseTask.xml.original"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+							
+							"C:\\cfn\\Monitoring\\Commons.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "CfnUtils/Monitoring/Commons.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+							
+							"C:\\cfn\\Monitoring\\Elmah.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "CfnUtils/Monitoring/Elmah.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+
+							"C:\\cfn\\Monitoring\\EventLogs.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "CfnUtils/Monitoring/EventLogs.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+							
+							"C:\\cfn\\Monitoring\\IisW3c.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "CfnUtils/Monitoring/IisW3c.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+							
+							"C:\\cfn\\Monitoring\\Install.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "CfnUtils/Monitoring/Install.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+
+							"C:\\cfn\\Monitoring\\NetMQ.dll" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "CfnUtils/Monitoring/NetMQ.dll"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+							
+							"C:\\cfn\\Monitoring\\Nlog.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "CfnUtils/Monitoring/Nlog.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							},
+							
+							"C:\\cfn\\Monitoring\\ZmqPerfmon.ps1" : {
+							  "source": { "Fn::Join" : [ "", [
+							    { "Ref" : "TemplateBaseUrl" }, "CfnUtils/Monitoring/ZmqPerfmon.ps1"
+						      ]]},
+							  "authentication": "DeploymentAccess"
+							}
+
+						},
+						"commands": {
+							"1-set-executiong-policy": {
+								"command": "powershell -command \"set-executionpolicy unrestricted\"",
+								"waitAfterCompletion": "0"
+							},
+
+							"2-install-monitoring": {
+								"command": { "Fn::Join": [" ", [
+									"powershell.exe -ExecutionPolicy Unrestricted",
+									"C:\\cfn\\Monitoring\\Install.ps1"
+								]]},
+                                "waitAfterCompletion": "0"
+							}
+						}
+                    }
+				}
+
+			},
+			"Properties": {
+				"InstanceType" : { "Ref" : "WebInstanceType" },
+				"ImageId" : { "Ref" : "WebServerAmi" },
+				"KeyName" : { "Ref" : "KeyPairName" },
+				"SubnetId": { "Ref" : "securityOutSubnet2Id" },
+				"SecurityGroupIds":[
+					{ "Ref" : "WebSvrSg" },
+					{ "Ref" : "SqlSvrConsumerSg" },
+					{ "Ref" : "LsZmqPublisherSg" }
+				],
+				"IamInstanceProfile": { "Ref" : "InstanceProfile" },
+				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+					"<script>\n",
+                    "cfn-init.exe -v -r WebFrontEnd -s ", { "Ref": "AWS::StackId" }, " --region ", { "Ref": "AWS::Region" },
+                    "\n</script>"
+				]]}},
+				"BlockDeviceMappings" : [
+					{
+						"DeviceName" : "/dev/sda1",
+						"Ebs" : { "VolumeSize" : "50", "VolumeType" : "gp2" }
+					},
+					{
+						"DeviceName" : "/dev/xvdk",
+						"Ebs" : { "VolumeSize" : "50" }
+					}
+				]
+			}
+		},
+		"SqlServers" : {
+		    "Type" : "AWS::EC2::Instance",
+			"Metadata" : {
+				"AWS::CloudFormation::Authentication":{
+                  "DeploymentAccess":{
+                     "type":"S3",
+                     "roleName":{
+                        "Ref":"DeploymentRole"
+                     }
+                  }
+               },
+				"AWS::CloudFormation::Init" : {
+					"configSets": {
+                        "config": [
+                            "sqlconfig"
+                        ]
+                    },
+					"sqlconfig" : {
+						"files" : {
+							"c:\\bootstrap\\scripts\\UtilSql.ps1" : {
+								"source": { "Fn::Join" : [ "", [
+									{ "Ref" : "TemplateBaseUrl" }, "ScaUtils/Sql/UtilSql.ps1"
+									]]},
+								"authentication" : "DeploymentAccess"
+							},
+							"C:\\cfn\\scripts\\SetupSql.ps1" : { "content": { "Fn::Join" : [ "", [
+								"Set-ExecutionPolicy Unrestricted -Force\n",
+								".\"c:\\bootstrap\\scripts\\UtilSql.ps1\"\n",
+								"Create-SsMixedAuthentication | Execute-SqlNonQuery\n",
+								"Restart-Service MSSQLSERVER -Force\n",
+								"Create-SsCreateAdminAccount -username \"", { "Ref" : "User" }, "\" -password \"", { "Ref" : "Pass" }, "\" | Execute-SqlNonQuery\n"
+							]]}}
+						},
+						"commands" : {
+							"1-execute-powershell-script-SetupSql": {
+                                "command": { "Fn::Join": [ "", [
+                                    "powershell.exe -ExecutionPolicy Unrestricted",
+									" C:\\cfn\\scripts\\SetupSql.ps1"
+                                ]]}
+                            }
+						}
+					}
+				}
+			},
+			"Properties": {
+				"InstanceType" : { "Ref" : "SqlInstanceType" },
+				"ImageId" : { "Ref" : "SqlServerAmi" },
+				"KeyName" : { "Ref" : "KeyPairName" },
+				"IamInstanceProfile": { "Ref": "InstanceProfile"},
+                "SubnetId": { "Ref" : "securityOutSubnet2Id" },
+				"SecurityGroupIds": [
+					{ "Ref": "SqlSvrSg" },
+					{ "Ref" : "LsZmqPublisherSg" }
+				],
+				"UserData" : { "Fn::Base64": { "Fn::Join": [ "", [
+                    "<script>\n",
+                    "cfn-init.exe -v -c config -s ", { "Ref": "AWS::StackId" }, " -r SqlServers ", " --region ", { "Ref": "AWS::Region" }, "\n",
+                    "</script>"
+                ]]}},
+				"Tags" : [{"Key": "Name", "Value" : "Sql Server Instance"}],
+				"BlockDeviceMappings" : [
+				   {
+					  "DeviceName" : "/dev/sda1",
+					  "Ebs" : { "VolumeSize" : "50", "VolumeType": "gp2" }
+				   },
+				   {
+					  "DeviceName" : "/dev/xvdl",
+					  "Ebs" : { "VolumeSize" : "50", "VolumeType": "gp2" }
+				   },
+				   {
+					  "DeviceName" : "/dev/xvdk",
+					  "Ebs" : { "VolumeSize" : "50" }
+				   }
+				]
+			}
+		},
+
+		"InstanceProfile": {
+		  "Type": "AWS::IAM::InstanceProfile",
+		  "Properties": {
+		    "Path": "/",
+		    "Roles": [{ "Ref": "DeploymentRole" }]
+		  }
+		},
+
+		"WebSvrSg": {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Properties" : {
+				"GroupDescription" : "Security group for Sql Server cluster.",
+				"SecurityGroupIngress" : [
+					{ "IpProtocol": "TCP", "FromPort": "80", "ToPort": "80", "CidrIp": "0.0.0.0/0" },
+					{ "IpProtocol": "TCP", "FromPort": "443", "ToPort": "443", "CidrIp": "0.0.0.0/0" }
+				],
+				"SecurityGroupEgress" : [
+					{ "IpProtocol": "-1", "FromPort": "0", "ToPort": "65535", "CidrIp": "0.0.0.0/0" }
+				],
+				"VpcId" : { "Ref" : "securityOutVpcId"},
+				"Tags": [{"Key": "Name", "Value" : "Sql Server Cluster"}]
+			}
+		},
+
+		"SqlSvrSg": {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Properties" : {
+				"GroupDescription" : "Security group for Sql Server cluster.",
+				"SecurityGroupIngress" : [
+					{ "IpProtocol": "TCP", "FromPort": "1433", "ToPort": "1433", "SourceSecurityGroupId": { "Ref": "SqlSvrConsumerSg" } },
+					{ "IpProtocol": "TCP", "FromPort": "80", "ToPort": "80", "SourceSecurityGroupId": { "Ref": "SqlSvrConsumerSg" } },
+					{ "IpProtocol": "TCP", "FromPort": "443", "ToPort": "443", "SourceSecurityGroupId": { "Ref": "SqlSvrConsumerSg" } }
+				],
+				"SecurityGroupEgress" : [
+					{ "IpProtocol": "-1", "FromPort": "0", "ToPort": "65535", "CidrIp": "0.0.0.0/0" }
+				],
+				"VpcId" : { "Ref" : "securityOutVpcId"},
+				"Tags": [{"Key": "Name", "Value" : "Sql Server Cluster"}]
+			}
+		},
+		"SqlSvrConsumerSg": {
+		   "Type" : "AWS::EC2::SecurityGroup",
+		   "Properties" :
+		   {
+			  "GroupDescription" : "Security group for servers that use the sql server.",
+			  "VpcId" : { "Ref" : "securityOutVpcId"},
+			  "Tags": [{"Key": "Name", "Value" : "Sql Server Consumers"}]
+		   }
+		}
+	},
+
+	"Outputs" : {
+		"SqlIp" : {
+			"Value" : { "Fn::GetAtt": ["SqlServers", "PrivateIp"]},
+			"Description" : "IP of the sql server."
+		},
+		"WebIp" : {
+			"Value" : { "Fn::GetAtt": ["WebFrontEnd", "PrivateIp"]},
+			"Description" : "IP of the sql server."
+		},
+		"ConsumerSg": {
+			"Value" : { "Ref": "SqlSvrConsumerSg"},
+			"Description" : "Security group that enables access to the sql server."
+		}
+	}
+}

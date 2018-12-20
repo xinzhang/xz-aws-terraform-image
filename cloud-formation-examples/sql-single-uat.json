@@ -1,0 +1,350 @@
+{
+	"AWSTemplateFormatVersion" : "2010-09-09",
+
+	"Description" : "",
+
+	"Parameters" : {
+		"KeyPairName": {
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+			"Default": "none-prod",
+            "Type": "String"
+        },
+		"DeploymentRole": {
+		  "Description" : "Role that allow access to the required resource for purpose of deployment.",
+		  "Type": "String",
+		  "Default": "Deployment"
+		},
+
+		"User": {
+            "Description": "Sql server database username.",
+            "Type": "String",
+            "Default": "sqladmin"
+        },
+		"Pass": {
+            "Description": "Sql server database password.",
+            "Type": "String",
+            "NoEcho": "true",
+			"Default": "Password1234!@#$"
+        },
+		"ServerNameSuffix": {
+			"Description": "Suffix for sql server computer name. e.g. Sql1Dev",
+            "Type": "String",
+            "Default": "Dev"
+		},
+
+		"SqlServerAmi": {
+			"Description" : "Image id of the frontend",
+			"Default" : "ami-63731559",
+			"Type" : "String"
+		},
+		"InstanceType": {
+            "Description": "Type of EC2 instance to launch for frontend",
+            "Type": "String",
+            "Default": "m3.large",
+            "AllowedValues": [
+                "m1.small",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge"
+            ],
+            "ConstraintDescription": "Must be a valid EC2 instance type."
+        },
+
+		"vpnSecurityOutVpcPrefix": {
+		  "Description": "Vpc prefix.",
+		  "Type": "String"
+		},
+		"securityOutSubnet1Id": {
+		  "Description" : "Subnet 1 for clustering",
+		  "Type": "String"
+		},
+		"securityOutSubnet2Id": {
+		  "Description" : "Subnet 2 for clustering",
+		  "Type": "String"
+		},
+		"securityOutAclId": {
+		  "Description" : "Security group of the underlying subnet.",
+		  "Type": "String"
+		},
+		"securityOutVpcId": {
+		  "Description" : "Id of the VPC that the subnet db group depends on.",
+		  "Type": "String"
+		},
+		"securityInSubnet1Prefix" : {
+		  "Description" : "Prefix for subnet 1. The number y in x.x.y.x",
+		  "Type" : "Number"
+		},
+		"securityInSubnet2Prefix" : {
+		  "Description" : "Prefix for subnet 2. The number y in x.x.y.x",
+		  "Type" : "Number"
+		},
+		"domainInDomainDNSName": {
+		  "Description" : "Domain dns name.",
+		  "Type": "String"
+		},
+		"domainInDomainAdminUser": {
+		  "Description" : "Domain root useraccount.",
+		  "Type": "String"
+		},
+		"domainInADServer1NetBIOSName": {
+		  "Description" : "IP of domain controller 1.",
+		  "Type": "String"
+		},
+		"domainInADServer2NetBIOSName": {
+		  "Description" : "IP of domain controller 2.",
+		  "Type": "String"
+		},
+		"DomainAdminPassword": {
+		  "Description" : "Domain root password.",
+		  "Type": "String",
+          "NoEcho": "true",
+		  "Default" : "Password1234"
+		},
+		"domainOutDc1Ip": {
+		  "Description" : "IP of domain controller 1.",
+		  "Type": "String"
+		},
+		"domainOutDc2Ip": {
+		  "Description" : "IP of domain controller 2.",
+		  "Type": "String"
+		},
+		"domainInDomainNetBIOSName": {
+		  "Description" : "Domain root password.",
+		  "Type": "String"
+		},
+
+		"TemplateBaseUrl": {
+		  "Description" : "Base url where this template was launched from",
+		  "Type" : "String"
+		}
+	},
+
+	"Resources" : {
+		"SqlServers" : {
+		    "Type" : "AWS::EC2::Instance",
+			"Metadata" : {
+				"AWS::CloudFormation::Authentication":{
+                  "DeploymentAccess":{
+                     "type":"S3",
+                     "roleName":{
+                        "Ref":"DeploymentRole"
+                     }
+                  }
+               },
+				"AWS::CloudFormation::Init" : {
+					"configSets": {
+                        "config": [
+                            "sqlconfig",
+                            "domain",
+							"finalise"
+                        ]
+                    },
+					"sqlconfig" : {
+						"files" : {
+							"c:\\bootstrap\\scripts\\UtilSql.ps1" : {
+								"source": { "Fn::Join" : [ "", [
+									{ "Ref" : "TemplateBaseUrl" }, "ScaUtils/Sql/UtilSql.ps1"
+									]]},
+								"authentication" : "DeploymentAccess"
+							},
+							"C:\\cfn\\scripts\\SetupSql.ps1" : { "content": { "Fn::Join" : [ "", [
+								"Set-ExecutionPolicy Unrestricted -Force\n",
+								".\"c:\\bootstrap\\scripts\\UtilSql.ps1\"\n",
+								"Create-SsMixedAuthentication | Execute-SqlNonQuery\n",
+								"Restart-Service MSSQLSERVER -Force\n",
+								"Create-SsCreateAdminAccount -username \"", { "Ref" : "User" }, "\" -password \"", { "Ref" : "Pass" }, "\" | Execute-SqlNonQuery\n"
+							]]}}
+						},
+						"commands" : {
+							"1-execute-powershell-script-SetupSql": {
+                                "command": { "Fn::Join": [ "", [
+                                    "powershell.exe -ExecutionPolicy Unrestricted",
+									" C:\\cfn\\scripts\\SetupSql.ps1"
+                                ]]}
+                            }
+						}
+					},
+					"domain" : {
+						"files": {
+                            "C:\\cfn\\scripts\\SetDNSOnNIC.ps1": {
+                                "content": { "Fn::Join": [ "\n", [
+                                    "param($Gateway1)",
+                                    "$NICs = Get-WMIObject Win32_NetworkAdapterConfiguration | where { $_.IPEnabled -eq \"TRUE\" }",
+                                    "Foreach($NIC in $NICs) {",
+									"  $DNSServers = \"$Gateway1\"",
+                                    "  $NIC.SetDNSServerSearchOrder($DNSServers)",
+                                    "  $NIC.SetDynamicDNSRegistration(\"TRUE\")",
+                                    "}"
+                                ]]}
+                            },
+							"C:\\cfn\\scripts\\RenameComputer.ps1": {
+                                "content": { "Fn::Join": [ "", [
+                                    "param ($name)\n",
+                                    "$sysInfo = Get-WmiObject -Class Win32_ComputerSystem\n",
+                                    "$sysInfo.Rename($name)\n"
+                                ]]}
+                            }
+                        },
+                        "commands": {
+                            "1-set-dns-on-nic": {
+                                "command": { "Fn::Join": [ "", [
+                                    "powershell.exe -ExecutionPolicy Unrestricted",
+                                    " c:\\cfn\\scripts\\SetDNSOnNIC.ps1 ", { "Ref": "domainOutDc1Ip" }
+                                ]]},
+                                "waitAfterCompletion": "10"
+                            },
+							"2-execute-powershell-script-RenameComputer": {
+                                "command": { "Fn::Join": [ "", [
+                                    "powershell.exe -ExecutionPolicy Unrestricted",
+                                    " C:\\cfn\\scripts\\RenameComputer.ps1 Sql", {"Ref": "ServerNameSuffix"}
+                                ]]},
+                                "waitAfterCompletion": "10"
+                            },
+							"3-reboot": {
+                                "command": "shutdown -r -t 1",
+                                "waitAfterCompletion": "forever"
+                            },
+                            "4-join-domain" : {
+                                "command": { "Fn::Join": [ "", [
+                                    "NETDOM join localhost",
+									" /Domain:", { "Ref": "domainInDomainDNSName" },
+                                    " /userd:", { "Ref": "domainInDomainAdminUser" },
+                                    " /passwordd:", { "Ref": "DomainAdminPassword" },
+                                    " /reboot"
+                                ]]},
+                                "waitAfterCompletion": "forever"
+                            },
+                            "5-add-local-admin": {
+                                "command": { "Fn::Join": [ "", [
+                                    "net localgroup \"Administrators\" \"",
+									{ "Ref": "domainInDomainNetBIOSName" }, "\\", { "Ref": "domainInDomainAdminUser" }, "\" /add"
+                                ]]},
+                                "waitAfterCompletion": "10"
+                            }
+                        }
+					},
+					"finalise"   : {
+                        "commands": {
+                            "3-signal-success": {
+                                "command": { "Fn::Join": [ "", [
+                                    "cfn-signal.exe -e %ERRORLEVEL% \"", { "Ref": "WaitConditionHandler" }, "\""
+                                ]]}
+                            }
+                        }
+                    }
+				}
+			},
+			"Properties": {
+				"InstanceType" : { "Ref" : "InstanceType" },
+				"ImageId" : { "Ref" : "SqlServerAmi" },
+				"KeyName" : { "Ref" : "KeyPairName" },
+				"IamInstanceProfile": { "Ref": "SqlServerInstanceProfile"},
+                "SubnetId": { "Ref" : "securityOutSubnet2Id" },
+				"SecurityGroupIds": [{ "Ref": "SqlSvrSg" }],
+				"UserData" : { "Fn::Base64": { "Fn::Join": [ "", [
+                    "<script>\n",
+                    "cfn-init.exe -v -c config -s ", { "Ref": "AWS::StackId" }, " -r SqlServers ", " --region ", { "Ref": "AWS::Region" }, "\n",
+                    "</script>"
+                ]]}},
+				"Tags" : [{"Key": "Name", "Value" : "Sql Server Instance"}],
+				"BlockDeviceMappings" : [
+				   {
+					  "DeviceName" : "/dev/sda1",
+					  "Ebs" : { "VolumeSize" : "100", "VolumeType": "gp2" }
+				   },
+				   {
+					  "DeviceName" : "/dev/xvdl",
+					  "Ebs" : { "VolumeSize" : "300", "VolumeType": "gp2" }
+				   },
+				   {
+					  "DeviceName" : "/dev/xvdk",
+					  "Ebs" : { "VolumeSize" : "300" }
+				   }
+				]
+			}
+		},
+
+		"SqlServerInstanceProfile": {
+		  "Type": "AWS::IAM::InstanceProfile",
+		  "Properties": {
+		    "Path": "/",
+		    "Roles": [{ "Ref": "DeploymentRole" }]
+		  }
+		},
+
+		"SqlSvrSg": {
+		   "Type" : "AWS::EC2::SecurityGroup",
+		   "Properties" :
+		   {
+			  "GroupDescription" : "Security group for Sql Server cluster.",
+			  "SecurityGroupIngress" : [
+			  {
+				"IpProtocol": "TCP",
+				"FromPort": "1433",
+				"ToPort": "1433",
+				"SourceSecurityGroupId": { "Ref": "SqlSvrConsumerSg" }
+		      },
+			  {
+				"IpProtocol": "TCP",
+				"FromPort": "80",
+				"ToPort": "80",
+				"SourceSecurityGroupId": { "Ref": "SqlSvrConsumerSg" }
+		      },
+			  {
+				"IpProtocol": "TCP",
+				"FromPort": "443",
+				"ToPort": "443",
+				"SourceSecurityGroupId": { "Ref": "SqlSvrConsumerSg" }
+		      }],
+			  "SecurityGroupEgress" : [
+			  {
+				"IpProtocol": "-1",
+				"FromPort": "0",
+				"ToPort": "65535",
+				"SourceSecurityGroupId": { "Ref": "SqlSvrConsumerSg" }
+			  },
+			  {
+				"IpProtocol": "-1",
+				"FromPort": "0",
+				"ToPort": "65535",
+				"CidrIp": "0.0.0.0/0"
+			  }],
+		      "VpcId" : { "Ref" : "securityOutVpcId"},
+			  "Tags": [{"Key": "Name", "Value" : "Sql Server Cluster"}]
+		   }
+		},
+		"SqlSvrConsumerSg": {
+		   "Type" : "AWS::EC2::SecurityGroup",
+		   "Properties" :
+		   {
+			  "GroupDescription" : "Security group for servers that use the sql server.",
+			  "VpcId" : { "Ref" : "securityOutVpcId"},
+			  "Tags": [{"Key": "Name", "Value" : "Sql Server Consumers"}]
+		   }
+		},
+
+		"WaitConditionHandler" : {
+			"Type" : "AWS::CloudFormation::WaitConditionHandle"
+		},
+		"WaitCondition" : {
+			"Type" : "AWS::CloudFormation::WaitCondition",
+			"DependsOn" : "SqlServers",
+			"Properties" : {
+			  "Handle" : {"Ref" : "WaitConditionHandler"},
+			  "Timeout" : "3600"
+			}
+		}
+	},
+
+	"Outputs" : {
+		"Ip" : {
+			"Value" : { "Fn::GetAtt": ["SqlServers", "PrivateIp"]},
+			"Description" : "IP of the sql server."
+		},
+		"ConsumerSg": {
+			"Value" : { "Ref": "SqlSvrConsumerSg"},
+			"Description" : "Security group that enables access to the sql server."
+		}
+	}
+}
